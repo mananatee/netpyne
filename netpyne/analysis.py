@@ -469,7 +469,8 @@ def plotSpikeHist (include = ['allCells', 'eachPop'], timeRange = None, binSize 
 ## Plot recorded cell traces (V, i, g, etc.)
 ######################################################################################################################################################
 def plotTraces (include = None, timeRange = None, overlay = False, oneFigPer = 'cell', rerun = False,
-    figSize = (10,8), saveData = None, saveFig = None, showFig = True): 
+    figSize = (10,8), saveData = None, saveFig = None, showFig = True, labelTime = True,
+    titleAsLegend = False, includeTraces = None, excludeTraces = None): 
     ''' 
     Plot recorded traces
         - include (['all',|'allCells','allNetStims',|,120,|,'E1'|,('L2', 56)|,('L5',[4,5,6])]): List of cells for which to plot 
@@ -485,7 +486,11 @@ def plotTraces (include = None, timeRange = None, overlay = False, oneFigPer = '
         - saveFig (None|True|'fileName'): File name where to save the figure;
             if set to True uses filename from simConfig (default: None)
         - showFig (True|False): Whether to show the figure or not (default: True)
-
+        - labelTime (True|False): whether to show the time axis label (default:True)
+        - titleAsLegend (True|False): whether to show each plot's title as legend 
+            instead of above the figure (default:False)
+        - includeTraces (['V_soma', ...]): traces to include in this plot
+        - excludeTraces (['V_soma', ...]): traces to exclude in this plot
         - Returns figure handles
     '''
 
@@ -509,6 +514,10 @@ def plotTraces (include = None, timeRange = None, overlay = False, oneFigPer = '
                 [0.71,0.82,0.41], [0.0,0.2,0.5]] 
 
     tracesList = sim.cfg.recordTraces.keys()
+    if includeTraces is not None:
+        tracesList = [trace for trace in tracesList if trace in includeTraces]
+    if excludeTraces is not None:
+        tracesList = [trace for trace in tracesList if trace not in excludeTraces]
     tracesList.sort()
     cells, cellGids, _ = getCellsInclude(include)
     gidPops = {cell['gid']: cell['tags']['popLabel'] for cell in cells}
@@ -538,9 +547,12 @@ def plotTraces (include = None, timeRange = None, overlay = False, oneFigPer = '
                         color = 'blue'
                         ylabel(trace, fontsize=fontsiz)
                     plot(t[:len(data)], data, linewidth=1.5, color=color, label='Cell %d, Pop %s '%(int(gid), gidPops[gid]))
-                    xlabel('Time (ms)', fontsize=fontsiz)
+                    if labelTime: xlabel('Time (ms)', fontsize=fontsiz)
                     xlim(timeRange)
-                    title('Cell %d, Pop %s '%(int(gid), gidPops[gid]))
+                    if titleAsLegend:
+                        legend(fontsize=fontsiz)
+                    else:
+                        title('Cell %d, Pop %s '%(int(gid), gidPops[gid]))
             if overlay:
                 maxLabelLen = 10
                 subplots_adjust(right=(0.9-0.012*maxLabelLen)) 
@@ -568,7 +580,7 @@ def plotTraces (include = None, timeRange = None, overlay = False, oneFigPer = '
                         subplot(len(tracesList),1,itrace+1)
                         color = 'blue'
                     plot(t[:lenData], data, linewidth=1.5, color=color, label=trace)
-                    xlabel('Time (ms)', fontsize=fontsiz)
+                    if labelTime: xlabel('Time (ms)', fontsize=fontsiz)
                     ylabel(trace, fontsize=fontsiz)
                     xlim(timeRange)
                     if itrace==0: title('Cell %d, Pop %s '%(int(gid), gidPops[gid]))
