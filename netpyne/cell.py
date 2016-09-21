@@ -6,6 +6,7 @@ Contains Cell related classes
 Contributors: salvadordura@gmail.com
 """
 
+from random import seed, random, randint, sample, uniform, triangular, gauss, betavariate, expovariate, gammavariate
 from numbers import Number
 from copy import deepcopy
 from neuron import h # Import NEURON
@@ -365,6 +366,9 @@ class Cell (object):
                     synMech['hSyn'] = synObj(loc, sec=sec['hSec'])  # create h Syn object (eg. h.Exp2Syn)
                     for synParamName,synParamValue in synMechParams.iteritems():  # add params of the synaptic mechanism
                         if synParamName not in ['label', 'mod', 'selfNetCon', 'loc']:
+                            # NOTE: for now, allow any valid python statement and eval() it
+                            if isinstance(synParamValue, str):
+                                synParamValue = eval(synParamValue)
                             setattr(synMech['hSyn'], synParamName, synParamValue)
                         elif synParamName == 'selfNetCon':  # create self netcon required for some synapses (eg. homeostatic)
                             secLabelNetCon = synParamValue.get('sec', 'soma')
@@ -788,7 +792,16 @@ class Cell (object):
             stim = getattr(h, params['type'])(sec['hSec'](params['loc']))
             stimParams = {k:v for k,v in params.iteritems() if k not in ['type', 'source', 'loc', 'sec', 'label']}
             stringParams = ''
+            self.stims.append(Dict(params)) # add to python structure
+            # first play signal into stim if present and remove entries from dict
+            if 'sigShapeVec' in stimParams:
+                # FIXME: make compatible with python structure
+                self.stims[-1]['sigShapeVec'] = h.Vector().from_python(stimParams.pop('sigShapeVec'))
+                self.stims[-1]['sigTimeVec'] = h.Vector().from_python(stimParams.pop('sigTimeVec'))
+                self.stims[-1]['sigTargetVar'] = stimParams.pop('sigTargetVar')
+                self.stims[-1]['sigShapeVec'].play(getattr(stim, '_ref_'+self.stims[-1]['sigTargetVar']), self.stims[-1]['sigTimeVec'])
             for stimParamName, stimParamValue in stimParams.iteritems(): # set mechanism internal params
+                # play signal into target variable
                 if isinstance(stimParamValue, list):
                     if stimParamName == 'amp': 
                         for i,val in enumerate(stimParamValue):
@@ -800,7 +813,6 @@ class Cell (object):
                 else: 
                     setattr(stim, stimParamName, stimParamValue)
                     stringParams = stringParams + ', ' + stimParamName +'='+ str(stimParamValue)
-            self.stims.append(Dict(params)) # add to python structure
             self.stims[-1]['h'+params['type']] = stim  # add stim object to dict in stims list
 
             if sim.cfg.verbose: print('  Added %s %s to cell gid=%d, sec=%s, loc=%.4g%s'%
