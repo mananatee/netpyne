@@ -8,6 +8,7 @@ Contributors: salvadordura@gmail.com
 
 from matplotlib.pylab import transpose, nanmax, nanmin, errstate, bar, histogram, floor, ceil, yticks, arange, gca, scatter, figure, hold, subplot, axes, shape, imshow, \
     colorbar, plot, xlabel, ylabel, title, xlim, ylim, clim, show, zeros, legend, savefig, psd, ion, subplots_adjust, subplots, tight_layout
+import numpy as np
 from matplotlib import gridspec
 from scipy import size, array, linspace, ceil
 from numbers import Number
@@ -463,6 +464,150 @@ def plotSpikeHist (include = ['allCells', 'eachPop'], timeRange = None, binSize 
 
     return fig
 
+
+def plotPSTH (stimOnsets, trialDur, include = ['allCells', 'eachPop'], binSize = 5, overlay=True, graphType='line', yaxis = 'rate', 
+    figSize = (10,8), saveData = None, saveFig = None, showFig = True): 
+    ''' 
+    Plot spike histogram
+        - stimOnsets: time points of Stimulus onset. Number of time points equals number of trials
+        - trialDur: trial duration from stimulus onset for each trial
+        - include (['all',|'allCells','allNetStims',|,120,|,'E1'|,('L2', 56)|,('L5',[4,5,6])]): List of data series to include. 
+            Note: one line per item, not grouped (default: ['allCells', 'eachPop'])
+        - timeRange ([start:stop]): Time range of spikes shown; if None shows all (default: None)
+        - binSize (int): Size in ms of each bin (default: 5)
+        - overlay (True|False): Whether to overlay the data lines or plot in separate subplots (default: True)
+        - graphType ('line'|'bar'): Type of graph to use (line graph or bar plot) (default: 'line')
+        - yaxis ('rate'|'count'): Units of y axis (firing rate in Hz, or spike count) (default: 'rate')
+        - figSize ((width, height)): Size of figure (default: (10,8))
+        - saveData (None|True|'fileName'): File name where to save the final data used to generate the figure;
+            if set to True uses filename from simConfig (default: None)
+        - saveFig (None|True|'fileName'): File name where to save the figure;
+            if set to True uses filename from simConfig (default: None)
+        - showFig (True|False): Whether to show the figure or not (default: True)
+
+        - Returns figure handle
+    '''
+
+    print('Plotting spike histogram...')
+
+    colorList = [[0.42,0.67,0.84], [0.90,0.76,0.00], [0.42,0.83,0.59], [0.90,0.32,0.00],
+                [0.34,0.67,0.67], [0.90,0.59,0.00], [0.42,0.82,0.83], [1.00,0.85,0.00],
+                [0.33,0.67,0.47], [1.00,0.38,0.60], [0.57,0.67,0.33], [0.5,0.2,0.0],
+                [0.71,0.82,0.41], [0.0,0.2,0.5]] 
+
+    
+    # Replace 'eachPop' with list of pops
+    if 'eachPop' in include: 
+        include.remove('eachPop')
+        for pop in sim.net.allPops: include.append(pop)
+
+    # Y-axis label
+    if yaxis == 'rate': yaxisLabel = 'Avg cell firing rate (Hz)'
+    elif yaxis == 'count': yaxisLabel = 'Spike count'
+    else:
+        print 'Invalid yaxis value %s', (yaxis)
+        return
+
+    histData = []
+
+    # create fig
+    fig,ax1 = subplots(figsize=figSize)
+    fontsiz = 12
+    
+    # Plot separate line for each entry in include
+    for iplot,subset in enumerate(include):
+        cells, cellGids, netStimPops = getCellsInclude([subset])
+        numNetStims = 0
+
+        # Select cells to include
+        if len(cellGids) > 0:
+            try:
+                spkinds,spkts = zip(*[(spkgid,spkt) for spkgid,spkt in zip(sim.allSimData['spkid'],sim.allSimData['spkt']) if spkgid in cellGids])
+            except:
+                spkinds,spkts = [],[]
+        else: 
+            spkinds,spkts = [],[]
+
+        # Add NetStim spikes
+        spkts, spkinds = list(spkts), list(spkinds)
+        numNetStims = 0
+        for netStimPop in netStimPops:
+            cellStims = [cellStim for cell,cellStim in sim.allSimData['stims'].iteritems() if netStimPop in cellStim]
+            if len(cellStims) > 0:
+                lastInd = max(spkinds) if len(spkinds)>0 else 0
+                spktsNew = [spkt for cellStim in cellStims for spkt in cellStim[netStimPop] ]
+                spkindsNew = [lastInd+1+i for i,cellStim in enumerate(cellStims) for spkt in cellStim[netStimPop]]
+                spkts.extend(spktsNew)
+                spkinds.extend(spkindsNew)
+                numNetStims += len(cellStims)
+
+        # Normalize spike times to each trial onset
+        tspk, ispk, stimOnsets = np.array(spkts), np.array(spkinds), np.array(stimOnsets)
+        spkinds, spkts = [],[]
+        for stimOnset in stimOnsets:
+            trial_ids = (tspk>=stimOnset) & (tspk<stimOnset+trialDur)
+            spkts.extend(tspk[trial_ids] - stimOnset) # normalize to stimulus onset
+            spkinds.extend(ispk[trial_ids])  
+
+        # compute histogram
+        histoCount, histoT = histogram(spkts, bins = arange(0, trialDur, binSize))
+        histoT = histoT[:-1]+binSize/2
+
+        histData.append(histoCount)
+
+        if yaxis=='rate':
+            histoCount = histoCount * (1000.0 / binSize) / (len(cellGids)+numNetStims) # convert to firing rate
+        histoCount = histoCount / len(stimOnsets) # divide by numTrials in both cases rate & count
+
+        color = colorList[iplot%len(colorList)]
+
+        if not overlay: 
+            subplot(len(include),1,iplot+1)  # if subplot, create new subplot
+            title (str(subset))
+            color = 'blue'
+   
+        if graphType == 'line':
+            plot (histoT, histoCount, linewidth=1.0, color = color)
+        elif graphType == 'bar':
+            bar(histoT, histoCount, width = binSize, color = color)
+
+        xlabel('Time (ms)', fontsize=fontsiz)
+        ylabel(yaxisLabel, fontsize=fontsiz) # add yaxis in opposite side
+        ax1.set_xlim([0, trialDur])
+
+    try:
+        tight_layout()
+    except:
+        pass
+
+    # Add legend
+    if overlay:
+        for i,subset in enumerate(include):
+            plot(0,0,color=colorList[i%len(colorList)],label=str(subset))
+        legend(fontsize=fontsiz, bbox_to_anchor=(1.04, 1), loc=2, borderaxespad=0.)
+        maxLabelLen = min(10,max([len(str(l)) for l in include]))
+        subplots_adjust(right=(0.9-0.012*maxLabelLen))
+
+
+    # save figure data
+    if saveData:
+        figData = {'histData': histData, 'histT': histoT, 'include': include, 'timeRange': timeRange, 'binSize': binSize,
+         'saveData': saveData, 'saveFig': saveFig, 'showFig': showFig}
+    
+        _saveFigData(figData, saveData, 'spikeHist')
+ 
+    # save figure
+    if saveFig: 
+        if isinstance(saveFig, str):
+            filename = saveFig
+        else:
+            filename = sim.cfg.filename+'_'+'spikeHist.png'
+        savefig(filename)
+
+    # show fig 
+    if showFig: _showFigure()
+
+    return fig
         
 
 ######################################################################################################################################################
